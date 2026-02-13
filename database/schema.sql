@@ -1,3 +1,5 @@
+USE placement_db;
+
 CREATE TABLE students (
     student_id INT AUTO_INCREMENT PRIMARY KEY,
     roll_no VARCHAR(20) UNIQUE NOT NULL,

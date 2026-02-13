@@ -8,7 +8,8 @@ db = mysql.connector.connect(
     host=os.getenv("DB_HOST", "localhost"),
     user=os.getenv("DB_USER", "placement_user"),
     password=os.getenv("DB_PASSWORD", "placement_pass"),
-    database=os.getenv("DB_NAME", "placement_db")
+    database=os.getenv("DB_NAME", "placement_db"),
+    port=int(os.getenv("DB_PORT", 3307))
 )
 
 @app.route("/apply", methods=["POST"])
