@@ -1,5 +1,8 @@
 DELIMITER $$
 
+DROP PROCEDURE IF EXISTS check_student_eligibility$$
+DROP PROCEDURE IF EXISTS apply_for_job$$
+
 CREATE PROCEDURE check_student_eligibility (
     IN p_student_id INT,
     IN p_job_id INT
@@ -16,16 +19,14 @@ BEGIN
     FROM job_roles
     WHERE job_id = p_job_id;
 
-    IF student_cgpa >= required_cgpa THEN
+    IF student_cgpa IS NULL OR required_cgpa IS NULL THEN
+        SELECT 'NOT ELIGIBLE' AS status;
+    ELSEIF student_cgpa >= required_cgpa THEN
         SELECT 'ELIGIBLE' AS status;
     ELSE
         SELECT 'NOT ELIGIBLE' AS status;
     END IF;
 END $$
-
-DELIMITER ;
-
-DELIMITER $$
 
 CREATE PROCEDURE apply_for_job (
     IN p_student_id INT,
@@ -43,7 +44,9 @@ BEGIN
     FROM job_roles
     WHERE job_id = p_job_id;
 
-    IF student_cgpa >= required_cgpa THEN
+    IF student_cgpa IS NULL OR required_cgpa IS NULL THEN
+        SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Student or job not found';
+    ELSEIF student_cgpa >= required_cgpa THEN
         INSERT INTO applications (student_id, job_id, applied_date, status)
         VALUES (p_student_id, p_job_id, CURDATE(), 'APPLIED');
     ELSE

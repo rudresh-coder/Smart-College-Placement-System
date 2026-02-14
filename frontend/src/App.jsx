@@ -110,18 +110,20 @@ function App() {
 
   const loadAdminData = async () => {
     try {
-      // Load all data for admin
-      const [studentsRes, companiesRes, appsRes, statsRes] = await Promise.all([
+      // Load all data for admin including jobs
+      const [studentsRes, companiesRes, appsRes, statsRes, jobsRes] = await Promise.all([
         fetch(`${API_BASE}/admin/students`),
         fetch(`${API_BASE}/admin/companies`),
         fetch(`${API_BASE}/admin/applications`),
         fetch(`${API_BASE}/admin/stats/placement`),
+        fetch(`${API_BASE}/jobs`),
       ]);
       
       setStudents(await studentsRes.json());
       setCompanies(await companiesRes.json());
       setAllApplications(await appsRes.json());
       setStats(await statsRes.json());
+      setJobs(await jobsRes.json());
     } catch (error) {
       setMessage(error.message);
     }
@@ -149,15 +151,22 @@ function App() {
   };
 
   const handleDeleteStudent = async (id) => {
-    if (!confirm("Delete this student?")) return;
-    
+    if (!window.confirm("Delete this student?")) return;
+
     try {
+      setMessage("");
       const res = await fetch(`${API_BASE}/admin/students/${id}`, { method: "DELETE" });
       const data = await res.json();
+      
+      if (!res.ok) {
+        setMessage(`Error: ${data.error}`);
+        return;
+      }
+      
       setMessage(data.message);
       loadAdminData();
     } catch (error) {
-      setMessage(error.message);
+      setMessage(`Error: ${error.message}`);
     }
   };
 
@@ -270,7 +279,7 @@ function App() {
           <h1>Smart College Placement System</h1>
           <div className="student-info">
             <strong>{student?.name}</strong> | CGPA: {student?.cgpa} | {student?.department}
-            <button onClick={() => { setUserType(null); setStudent(null); }} style={{ marginLeft: "20px", fontSize: "0.9em" }}>
+            <button className="logout-btn" onClick={() => { setUserType(null); setStudent(null); }} style={{ marginLeft: "20px", fontSize: "0.9em" }}>
               Logout
             </button>
           </div>
@@ -347,7 +356,7 @@ function App() {
     <div className="container">
       <header className="header">
         <h1> Placement Officer Dashboard</h1>
-        <button onClick={() => setUserType(null)} style={{ float: "right" }}>Logout</button>
+        <button className="logout-btn" onClick={() => setUserType(null)} style={{ marginLeft: "20px", fontSize: "0.9em" }}>Logout</button>
       </header>
 
       <nav className="tabs">
@@ -469,15 +478,29 @@ function App() {
         <div className="section">
           <h2>Create Offer</h2>
           <form onSubmit={handleCreateOffer} className="admin-form">
-            <input name="student_id" type="number" placeholder="Student ID" required />
-            <input name="job_id" type="number" placeholder="Job ID" required />
+            <select name="student_id" required>
+              <option value="">Select Student</option>
+              {students.map((s) => (
+                <option key={s.student_id} value={s.student_id}>
+                  ID: {s.student_id} - {s.name} ({s.roll_no})
+                </option>
+              ))}
+            </select>
+            <select name="job_id" required>
+              <option value="">Select Job</option>
+              {jobs.map((j) => (
+                <option key={j.job_id} value={j.job_id}>
+                  ID: {j.job_id} - {j.role_name} @ {j.company_name}
+                </option>
+              ))}
+            </select>
             <select name="offer_status" required>
               <option value="">Select Status</option>
               <option value="ACCEPTED">ACCEPTED</option>
               <option value="PENDING">PENDING</option>
               <option value="REJECTED">REJECTED</option>
             </select>
-            <button type="submit">Create Offer (Auto-updates Application Status)</button>
+            <button type="submit">Create Offer (Auto-creates Application if needed)</button>
           </form>
         </div>
       )}

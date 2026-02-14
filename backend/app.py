@@ -1,7 +1,6 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import os
-import mysql.connector
 from mysql.connector import pooling
 
 app = Flask(__name__)
@@ -20,6 +19,9 @@ connection_pool = pooling.MySQLConnectionPool(
     pool_size=5,
     **db_config
 )
+
+def get_conn():
+    return connection_pool.get_connection()
 
 # ============================================
 # STUDENT WORKFLOWS
@@ -72,7 +74,7 @@ def apply_job():
     except (TypeError, ValueError):
         return jsonify({"error": "student_id and job_id must be integers"}), 400
 
-    db = connection_pool.get_connection()
+    db = get_conn()
     cursor = None
     try:
         cursor = db.cursor(dictionary=True)
@@ -90,7 +92,7 @@ def apply_job():
 @app.route("/students/<int:student_id>", methods=["GET"])
 def get_student(student_id):
     """Get student profile"""
-    db = connection_pool.get_connection()
+    db = get_conn()
     cursor = None
     try:
         cursor = db.cursor(dictionary=True)
@@ -110,7 +112,7 @@ def get_student(student_id):
 @app.route("/applications/<int:student_id>", methods=["GET"])
 def get_student_applications(student_id):
     """Student views their application history"""
-    db = connection_pool.get_connection()
+    db = get_conn()
     cursor = None
     try:
         cursor = db.cursor(dictionary=True)
@@ -135,7 +137,7 @@ def get_student_applications(student_id):
 @app.route("/jobs", methods=["GET"])
 def get_jobs():
     """Get all available jobs"""
-    db = connection_pool.get_connection()
+    db = get_conn()
     cursor = None
     try:
         cursor = db.cursor(dictionary=True)
@@ -255,6 +257,14 @@ def admin_delete_student(student_id):
     cursor = None
     try:
         cursor = db.cursor(dictionary=True)
+        
+        # Delete related offers first
+        cursor.execute("DELETE FROM offers WHERE student_id = %s", (student_id,))
+        
+        # Delete related applications
+        cursor.execute("DELETE FROM applications WHERE student_id = %s", (student_id,))
+        
+        # Now delete the student
         cursor.execute("DELETE FROM students WHERE student_id = %s", (student_id,))
         db.commit()
         
@@ -408,12 +418,29 @@ def admin_create_offer():
     cursor = None
     try:
         cursor = db.cursor(dictionary=True)
+        
+        # Check if application exists
+        cursor.execute("""
+            SELECT application_id FROM applications 
+            WHERE student_id = %s AND job_id = %s
+        """, (data["student_id"], data["job_id"]))
+        
+        application = cursor.fetchone()
+        
+        # If no application exists, create one first
+        if not application:
+            cursor.execute("""
+                INSERT INTO applications (student_id, job_id, applied_date, status)
+                VALUES (%s, %s, CURDATE(), 'APPLIED')
+            """, (data["student_id"], data["job_id"]))
+        
+        # Now create the offer
         cursor.execute("""
             INSERT INTO offers (student_id, job_id, offer_date, offer_status)
             VALUES (%s, %s, CURDATE(), %s)
         """, (data["student_id"], data["job_id"], data["offer_status"]))
         db.commit()
-        # Trigger automatically updates application status to 'OFFERED'
+        
         return jsonify({"message": "Offer created successfully", "offer_id": cursor.lastrowid}), 201
     except Exception as e:
         return jsonify({"error": str(e)}), 400
