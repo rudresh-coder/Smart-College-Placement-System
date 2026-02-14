@@ -2,6 +2,34 @@
   box-sizing: border-box;
 }
 
+body {
+  margin: 0;
+  background: radial-gradient(1200px circle at 10% 10%, #1a1a2e 0%, #0f0f0f 45%, #0b0b0b 100%);
+  color: #e6e6e6;
+}
+
+/* Glassmorphism */
+.header,
+.login-box,
+.card,
+.admin-form,
+.admin-table,
+.message {
+  background: rgba(26, 26, 26, 0.55);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.35);
+}
+
+.admin-table th {
+  background: rgba(26, 26, 26, 0.7);
+}
+
+.card:hover {
+  box-shadow: 0 20px 40px rgba(100, 108, 255, 0.25);
+}
+
 .container {
   max-width: 1200px;
   margin: 0 auto;
@@ -37,9 +65,9 @@
 .login-box button {
   width: 100%;
   padding: 12px;
-  background: #646cff;
+  background: linear-gradient(135deg, rgba(100, 108, 255, 0.9), rgba(120, 190, 255, 0.9));
   color: white;
-  border: none;
+  border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 5px;
   font-size: 16px;
   cursor: pointer;
@@ -47,6 +75,7 @@
 
 .login-box button:hover {
   background: #535bf2;
+  filter: brightness(1.05);
 }
 
 .header {
