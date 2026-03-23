@@ -345,11 +345,25 @@ button {
   animation: statusPulse 2s ease-in-out infinite;
 }
 
+.status.applied {
+  background: rgba(123, 97, 255, 0.2);
+  color: var(--primary);
+  border: 1px solid var(--primary);
+  box-shadow: 0 0 10px rgba(123, 97, 255, 0.3);
+}
+
 .status.pending {
   background: rgba(255, 230, 109, 0.2);
   color: var(--neon-yellow);
   border: 1px solid var(--neon-yellow);
   box-shadow: 0 0 10px rgba(255, 230, 109, 0.3);
+}
+
+.status.offered {
+  background: rgba(0, 212, 255, 0.2);
+  color: var(--neon-cyan);
+  border: 1px solid var(--neon-cyan);
+  box-shadow: 0 0 10px rgba(0, 212, 255, 0.3);
 }
 
 .status.accepted {
