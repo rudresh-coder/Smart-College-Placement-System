@@ -1,40 +1,50 @@
-import { useState} from "react";
+import { useState } from "react";
 import "./App.css";
 
-const API_BASE = "http://127.0.0.1:5000";
+const API_BASE = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:5000";
 
 function App() {
-  const [userType, setUserType] = useState(null); // null, "student", "admin"
+  const [userType, setUserType] = useState(null);
   const [studentId, setStudentId] = useState("");
   const [activeTab, setActiveTab] = useState("jobs");
-  
+  const [adminKey, setAdminKey] = useState("");
+
   // Student state
   const [student, setStudent] = useState(null);
   const [jobs, setJobs] = useState([]);
   const [applications, setApplications] = useState([]);
-  
+
   // Admin state
   const [students, setStudents] = useState([]);
   const [companies, setCompanies] = useState([]);
   const [allApplications, setAllApplications] = useState([]);
   const [stats, setStats] = useState([]);
-  
+
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
+
+  const adminFetch = (url, options = {}) => {
+    const mergedHeaders = {
+      ...(options.headers || {}),
+      ...(adminKey ? { "X-Admin-Key": adminKey } : {}),
+    };
+
+    return fetch(url, { ...options, headers: mergedHeaders });
+  };
 
   // ============================================
   // STUDENT LOGIN & WORKFLOWS
   // ============================================
-  
+
   const handleStudentLogin = async (e) => {
     e.preventDefault();
     if (!studentId) return;
-    
+
     try {
       setLoading(true);
       const res = await fetch(`${API_BASE}/students/${studentId}`);
       if (!res.ok) throw new Error("Student not found");
-      
+
       const data = await res.json();
       setStudent(data);
       setUserType("student");
@@ -71,23 +81,23 @@ function App() {
     try {
       setMessage("");
       setLoading(true);
-      
+
       // Check eligibility
       const eligRes = await fetch(`${API_BASE}/eligibility?student_id=${studentId}&job_id=${jobId}`);
       const eligData = await eligRes.json();
-      
+
       if (eligData.status === "NOT ELIGIBLE") {
         setMessage("You are not eligible for this job (CGPA requirement not met)");
         return;
       }
-      
+
       // Apply
       const applyRes = await fetch(`${API_BASE}/apply`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ student_id: Number(studentId), job_id: jobId }),
       });
-      
+
       const applyData = await applyRes.json();
       setMessage(` ${applyData.message || "Application successful"}`);
       loadStudentApplications();
@@ -101,8 +111,15 @@ function App() {
   // ============================================
   // ADMIN WORKFLOWS
   // ============================================
-  
+
   const handleAdminLogin = () => {
+    const key = window.prompt("Enter Admin API Key");
+    if (!key) {
+      setMessage("Admin API key is required");
+      return;
+    }
+
+    setAdminKey(key);
     setUserType("admin");
     setActiveTab("students");
     loadAdminData();
@@ -110,15 +127,18 @@ function App() {
 
   const loadAdminData = async () => {
     try {
-      // Load all data for admin including jobs
       const [studentsRes, companiesRes, appsRes, statsRes, jobsRes] = await Promise.all([
-        fetch(`${API_BASE}/admin/students`),
-        fetch(`${API_BASE}/admin/companies`),
-        fetch(`${API_BASE}/admin/applications`),
-        fetch(`${API_BASE}/admin/stats/placement`),
+        adminFetch(`${API_BASE}/admin/students`),
+        adminFetch(`${API_BASE}/admin/companies`),
+        adminFetch(`${API_BASE}/admin/applications`),
+        adminFetch(`${API_BASE}/admin/stats/placement`),
         fetch(`${API_BASE}/jobs`),
       ]);
-      
+
+      if (!studentsRes.ok || !companiesRes.ok || !appsRes.ok || !statsRes.ok || !jobsRes.ok) {
+        throw new Error("Failed to load admin data (check Admin API key / backend)");
+      }
+
       setStudents(await studentsRes.json());
       setCompanies(await companiesRes.json());
       setAllApplications(await appsRes.json());
@@ -133,14 +153,14 @@ function App() {
     e.preventDefault();
     const formData = new FormData(e.target);
     const data = Object.fromEntries(formData);
-    
+
     try {
-      const res = await fetch(`${API_BASE}/admin/students`, {
+      const res = await adminFetch(`${API_BASE}/admin/students`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(data),
       });
-      
+
       const result = await res.json();
       setMessage(result.message || "Student created successfully");
       loadAdminData();
@@ -155,14 +175,14 @@ function App() {
 
     try {
       setMessage("");
-      const res = await fetch(`${API_BASE}/admin/students/${id}`, { method: "DELETE" });
+      const res = await adminFetch(`${API_BASE}/admin/students/${id}`, { method: "DELETE" });
       const data = await res.json();
-      
+
       if (!res.ok) {
         setMessage(`Error: ${data.error}`);
         return;
       }
-      
+
       setMessage(data.message);
       loadAdminData();
     } catch (error) {
@@ -174,14 +194,14 @@ function App() {
     e.preventDefault();
     const formData = new FormData(e.target);
     const data = Object.fromEntries(formData);
-    
+
     try {
-      const res = await fetch(`${API_BASE}/admin/companies`, {
+      const res = await adminFetch(`${API_BASE}/admin/companies`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(data),
       });
-      
+
       const result = await res.json();
       setMessage(result.message || "Company created successfully");
       loadAdminData();
@@ -195,14 +215,14 @@ function App() {
     e.preventDefault();
     const formData = new FormData(e.target);
     const data = Object.fromEntries(formData);
-    
+
     try {
-      const res = await fetch(`${API_BASE}/admin/jobs`, {
+      const res = await adminFetch(`${API_BASE}/admin/jobs`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(data),
       });
-      
+
       const result = await res.json();
       setMessage(result.message || "Job created successfully");
       e.target.reset();
@@ -215,14 +235,14 @@ function App() {
     e.preventDefault();
     const formData = new FormData(e.target);
     const data = Object.fromEntries(formData);
-    
+
     try {
-      const res = await fetch(`${API_BASE}/admin/offers`, {
+      const res = await adminFetch(`${API_BASE}/admin/offers`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(data),
       });
-      
+
       const result = await res.json();
       setMessage(result.message || "Offer created successfully (Application status auto-updated)");
       loadAdminData();
@@ -235,20 +255,20 @@ function App() {
   // ============================================
   // RENDER: USER TYPE SELECTION
   // ============================================
-  
+
   if (!userType) {
     return (
       <div className="container">
         <div className="login-box">
           <h1> Smart College Placement System</h1>
           <p style={{ marginBottom: "30px", color: "#aaa" }}>Select User Type</p>
-          
+
           <button onClick={handleAdminLogin} style={{ marginBottom: "15px", width: "100%" }}>
              Login as Placement Officer (Admin)
           </button>
-          
+
           <hr style={{ margin: "20px 0", border: "1px solid #444" }} />
-          
+
           <form onSubmit={handleStudentLogin}>
             <input
               type="number"
@@ -261,7 +281,7 @@ function App() {
               {loading ? "Loading..." : " Login as Student"}
             </button>
           </form>
-          
+
           {message && <div className="message error">{message}</div>}
         </div>
       </div>
@@ -271,7 +291,7 @@ function App() {
   // ============================================
   // RENDER: STUDENT VIEW
   // ============================================
-  
+
   if (userType === "student") {
     return (
       <div className="container">
@@ -351,12 +371,21 @@ function App() {
   // ============================================
   // RENDER: ADMIN VIEW
   // ============================================
-  
+
   return (
     <div className="container">
       <header className="header">
         <h1> Placement Officer Dashboard</h1>
-        <button className="logout-btn" onClick={() => setUserType(null)} style={{ marginLeft: "20px", fontSize: "0.9em" }}>Logout</button>
+        <button
+          className="logout-btn"
+          onClick={() => {
+            setUserType(null);
+            setAdminKey("");
+          }}
+          style={{ marginLeft: "20px", fontSize: "0.9em" }}
+        >
+          Logout
+        </button>
       </header>
 
       <nav className="tabs">
@@ -542,14 +571,14 @@ function App() {
             <thead>
               <tr>
                 <th>Company</th>
-                <th>Total Offers</th>
+                <th>Total Placements</th>
               </tr>
             </thead>
             <tbody>
               {stats.map((stat, idx) => (
                 <tr key={idx}>
                   <td>{stat.company_name}</td>
-                  <td>{stat.total_offers}</td>
+                  <td>{stat.total_placements}</td>
                 </tr>
               ))}
             </tbody>
