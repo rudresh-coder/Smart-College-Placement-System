@@ -4,7 +4,40 @@ import os
 from mysql.connector import pooling
 
 app = Flask(__name__)
-CORS(app)
+
+ALLOWED_ORIGINS = [
+    origin.strip()
+    for origin in os.getenv("FRONTEND_ORIGINS", "http://localhost:5173").split(",")
+    if origin.strip()
+]
+
+CORS(
+    app,
+    resources={r"/*": {"origins": ALLOWED_ORIGINS}},
+    methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Content-Type", "X-Admin-Key"],
+)
+
+ADMIN_API_KEY = os.getenv("ADMIN_API_KEY", "")
+ALLOWED_OFFER_STATUS = {"PENDING", "ACCEPTED", "REJECTED"}
+
+@app.before_request
+def protect_admin_routes():
+    if not request.path.startswith("/admin"):
+        return None
+
+    # allow CORS preflight
+    if request.method == "OPTIONS":
+        return None
+
+    if not ADMIN_API_KEY:
+        return jsonify({"error": "Server misconfigured: ADMIN_API_KEY is not set"}), 500
+
+    provided_key = request.headers.get("X-Admin-Key", "")
+    if provided_key != ADMIN_API_KEY:
+        return jsonify({"error": "Unauthorized"}), 401
+
+    return None
 
 db_config = {
     "host": os.getenv("DB_HOST", "localhost"),
@@ -414,6 +447,10 @@ def admin_create_offer():
         if field not in data:
             return jsonify({"error": f"{field} is required"}), 400
 
+    offer_status = str(data["offer_status"]).upper()
+    if offer_status not in ALLOWED_OFFER_STATUS:
+        return jsonify({"error": "offer_status must be one of PENDING, ACCEPTED, REJECTED"}), 400
+
     db = connection_pool.get_connection()
     cursor = None
     try:
@@ -438,7 +475,7 @@ def admin_create_offer():
         cursor.execute("""
             INSERT INTO offers (student_id, job_id, offer_date, offer_status)
             VALUES (%s, %s, CURDATE(), %s)
-        """, (data["student_id"], data["job_id"], data["offer_status"]))
+        """, (data["student_id"], data["job_id"], offer_status))
         db.commit()
         
         return jsonify({"message": "Offer created successfully", "offer_id": cursor.lastrowid}), 201
@@ -516,4 +553,4 @@ def admin_get_all_applications():
             db.close()
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    app.run(host="0.0.0.0", port=int(os.getenv("PORT", "5000")), debug=False)

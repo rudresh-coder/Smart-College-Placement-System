@@ -49,15 +49,6 @@ The system enables students to check eligibility and apply for jobs, while place
 - Offer creation and updates automatically synchronize application status using triggers
 - Placement statistics are computed dynamically using SQL views
 
-### Status Mapping
-| Offer Status | Application Status |
-|-------------|-------------------|
-| PENDING     | APPLIED           |
-| ACCEPTED    | OFFERED           |
-| REJECTED    | REJECTED          |
-
----
-
 ## Reports
 - **Company-wise placement statistics** via view `company_placement_stats`
 - **Student placement status** via view `student_placement_status`

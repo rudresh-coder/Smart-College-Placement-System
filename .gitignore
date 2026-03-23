@@ -10,6 +10,9 @@ venv/
 # Env
 .env
 .env.*
+**/.env
+**/.env.*
+!.env.example
 
 # OS / IDE
 .DS_Store
