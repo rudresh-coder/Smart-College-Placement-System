@@ -1,5 +1,3 @@
-USE placement_db;
-
 -- STUDENTS
 CREATE TABLE IF NOT EXISTS students (
     student_id INT AUTO_INCREMENT PRIMARY KEY,

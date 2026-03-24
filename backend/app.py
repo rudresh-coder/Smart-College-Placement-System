@@ -56,13 +56,31 @@ connection_pool = pooling.MySQLConnectionPool(
 def get_conn():
     return connection_pool.get_connection()
 
+def _fetch_student_job_cgpa(cursor, student_id, job_id):
+    cursor.execute(
+        """
+        SELECT s.cgpa AS student_cgpa, j.min_cgpa AS required_cgpa
+        FROM students s
+        JOIN job_roles j ON j.job_id = %s
+        WHERE s.student_id = %s
+        """,
+        (job_id, student_id),
+    )
+    return cursor.fetchone()
+
+def _application_status_from_offer(offer_status):
+    if offer_status == "ACCEPTED":
+        return "OFFERED"
+    if offer_status == "REJECTED":
+        return "REJECTED"
+    return "PENDING"
+
 # ============================================
 # STUDENT WORKFLOWS
 # ============================================
 
 @app.route("/eligibility", methods=["GET"])
 def check_eligibility():
-    """Student checks if they're eligible for a job"""
     student_id = request.args.get("student_id")
     job_id = request.args.get("job_id")
 
@@ -75,17 +93,17 @@ def check_eligibility():
     except (TypeError, ValueError):
         return jsonify({"error": "student_id and job_id must be integers"}), 400
 
-    db = connection_pool.get_connection()
+    db = get_conn()
     cursor = None
     try:
         cursor = db.cursor(dictionary=True)
-        cursor.callproc("check_student_eligibility", [student_id, job_id])
-        for result in cursor.stored_results():
-            row = result.fetchone()
-            if row is None:
-                return jsonify({"error": "No eligibility result found"}), 404
-            return jsonify(row)
-        return jsonify({"error": "No eligibility result found"}), 404
+        row = _fetch_student_job_cgpa(cursor, student_id, job_id)
+
+        if row is None:
+            return jsonify({"status": "NOT ELIGIBLE"})
+
+        status = "ELIGIBLE" if row["student_cgpa"] >= row["required_cgpa"] else "NOT ELIGIBLE"
+        return jsonify({"status": status})
     except Exception as e:
         return jsonify({"error": str(e)}), 400
     finally:
@@ -96,7 +114,6 @@ def check_eligibility():
 
 @app.route("/apply", methods=["POST"])
 def apply_job():
-    """Student applies for a job"""
     data = request.get_json(silent=True) or {}
     if "student_id" not in data or "job_id" not in data:
         return jsonify({"error": "student_id and job_id are required"}), 400
@@ -111,9 +128,29 @@ def apply_job():
     cursor = None
     try:
         cursor = db.cursor(dictionary=True)
-        cursor.callproc("apply_for_job", [student_id, job_id])
+
+        row = _fetch_student_job_cgpa(cursor, student_id, job_id)
+        if row is None:
+            return jsonify({"error": "Student or job not found"}), 404
+        if row["student_cgpa"] < row["required_cgpa"]:
+            return jsonify({"error": "Student not eligible for this job"}), 400
+
+        cursor.execute(
+            "SELECT application_id FROM applications WHERE student_id = %s AND job_id = %s",
+            (student_id, job_id),
+        )
+        if cursor.fetchone():
+            return jsonify({"message": "Application already exists"}), 200
+
+        cursor.execute(
+            """
+            INSERT INTO applications (student_id, job_id, applied_date, status)
+            VALUES (%s, %s, CURDATE(), 'APPLIED')
+            """,
+            (student_id, job_id),
+        )
         db.commit()
-        return jsonify({"message": "Application successful"})
+        return jsonify({"message": "Application successful"}), 201
     except Exception as e:
         return jsonify({"error": str(e)}), 400
     finally:
@@ -439,46 +476,119 @@ def admin_delete_job(job_id):
 
 @app.route("/admin/offers", methods=["POST"])
 def admin_create_offer():
-    """Admin creates an offer (triggers automatic application status update)"""
     data = request.get_json(silent=True) or {}
     required_fields = ["student_id", "job_id", "offer_status"]
-    
+
     for field in required_fields:
         if field not in data:
             return jsonify({"error": f"{field} is required"}), 400
+
+    try:
+        student_id = int(data["student_id"])
+        job_id = int(data["job_id"])
+    except (TypeError, ValueError):
+        return jsonify({"error": "student_id and job_id must be integers"}), 400
 
     offer_status = str(data["offer_status"]).upper()
     if offer_status not in ALLOWED_OFFER_STATUS:
         return jsonify({"error": "offer_status must be one of PENDING, ACCEPTED, REJECTED"}), 400
 
-    db = connection_pool.get_connection()
+    db = get_conn()
     cursor = None
     try:
         cursor = db.cursor(dictionary=True)
-        
-        # Check if application exists
-        cursor.execute("""
-            SELECT application_id FROM applications 
-            WHERE student_id = %s AND job_id = %s
-        """, (data["student_id"], data["job_id"]))
-        
-        application = cursor.fetchone()
-        
-        # If no application exists, create one first
-        if not application:
-            cursor.execute("""
+
+        cursor.execute(
+            """
+            SELECT s.student_id, j.job_id
+            FROM students s
+            JOIN job_roles j ON j.job_id = %s
+            WHERE s.student_id = %s
+            """,
+            (job_id, student_id),
+        )
+        if cursor.fetchone() is None:
+            return jsonify({"error": "Student or job not found"}), 404
+
+        application_status = _application_status_from_offer(offer_status)
+
+        cursor.execute(
+            "SELECT application_id FROM applications WHERE student_id = %s AND job_id = %s",
+            (student_id, job_id),
+        )
+        existing_app = cursor.fetchone()
+
+        if existing_app:
+            cursor.execute(
+                """
+                UPDATE applications
+                SET status = %s
+                WHERE student_id = %s AND job_id = %s
+                """,
+                (application_status, student_id, job_id),
+            )
+        else:
+            cursor.execute(
+                """
                 INSERT INTO applications (student_id, job_id, applied_date, status)
-                VALUES (%s, %s, CURDATE(), 'APPLIED')
-            """, (data["student_id"], data["job_id"]))
-        
-        # Now create the offer
-        cursor.execute("""
+                VALUES (%s, %s, CURDATE(), %s)
+                """,
+                (student_id, job_id, application_status),
+            )
+
+        cursor.execute(
+            """
             INSERT INTO offers (student_id, job_id, offer_date, offer_status)
             VALUES (%s, %s, CURDATE(), %s)
-        """, (data["student_id"], data["job_id"], offer_status))
+            """,
+            (student_id, job_id, offer_status),
+        )
         db.commit()
-        
+
         return jsonify({"message": "Offer created successfully", "offer_id": cursor.lastrowid}), 201
+    except Exception as e:
+        return jsonify({"error": str(e)}), 400
+    finally:
+        if cursor is not None:
+            cursor.close()
+        if db.is_connected():
+            db.close()
+
+@app.route("/admin/offers/<int:offer_id>", methods=["PUT"])
+def admin_update_offer_status(offer_id):
+    data = request.get_json(silent=True) or {}
+    offer_status = str(data.get("offer_status", "")).upper()
+    if offer_status not in ALLOWED_OFFER_STATUS:
+        return jsonify({"error": "offer_status must be one of PENDING, ACCEPTED, REJECTED"}), 400
+
+    db = get_conn()
+    cursor = None
+    try:
+        cursor = db.cursor(dictionary=True)
+        cursor.execute(
+            "SELECT offer_id, student_id, job_id FROM offers WHERE offer_id = %s",
+            (offer_id,),
+        )
+        offer = cursor.fetchone()
+        if offer is None:
+            return jsonify({"error": "Offer not found"}), 404
+
+        cursor.execute(
+            "UPDATE offers SET offer_status = %s WHERE offer_id = %s",
+            (offer_status, offer_id),
+        )
+
+        cursor.execute(
+            """
+            UPDATE applications
+            SET status = %s
+            WHERE student_id = %s AND job_id = %s
+            """,
+            (_application_status_from_offer(offer_status), offer["student_id"], offer["job_id"]),
+        )
+
+        db.commit()
+        return jsonify({"message": "Offer status updated successfully"})
     except Exception as e:
         return jsonify({"error": str(e)}), 400
     finally:
@@ -493,14 +603,23 @@ def admin_create_offer():
 
 @app.route("/admin/stats/placement", methods=["GET"])
 def get_placement_stats():
-    """Company-wise placement statistics"""
-    db = connection_pool.get_connection()
+    db = get_conn()
     cursor = None
     try:
         cursor = db.cursor(dictionary=True)
-        cursor.execute("SELECT * FROM company_placement_stats")
-        stats = cursor.fetchall()
-        return jsonify(stats)
+        cursor.execute(
+            """
+            SELECT
+                c.company_name,
+                COUNT(o.offer_id) AS total_placements
+            FROM companies c
+            JOIN job_roles j ON c.company_id = j.company_id
+            JOIN offers o ON j.job_id = o.job_id
+            WHERE o.offer_status = 'ACCEPTED'
+            GROUP BY c.company_name
+            """
+        )
+        return jsonify(cursor.fetchall())
     except Exception as e:
         return jsonify({"error": str(e)}), 400
     finally:
@@ -511,14 +630,25 @@ def get_placement_stats():
 
 @app.route("/admin/stats/student-placements", methods=["GET"])
 def get_student_placements():
-    """Student-wise placement status"""
-    db = connection_pool.get_connection()
+    db = get_conn()
     cursor = None
     try:
         cursor = db.cursor(dictionary=True)
-        cursor.execute("SELECT * FROM student_placement_status")
-        placements = cursor.fetchall()
-        return jsonify(placements)
+        cursor.execute(
+            """
+            SELECT
+                s.student_id,
+                s.name,
+                c.company_name,
+                j.role_name,
+                o.offer_status
+            FROM students s
+            JOIN offers o ON s.student_id = o.student_id
+            JOIN job_roles j ON o.job_id = j.job_id
+            JOIN companies c ON j.company_id = c.company_id
+            """
+        )
+        return jsonify(cursor.fetchall())
     except Exception as e:
         return jsonify({"error": str(e)}), 400
     finally:
@@ -530,7 +660,7 @@ def get_student_placements():
 @app.route("/admin/applications", methods=["GET"])
 def admin_get_all_applications():
     """Admin views all applications"""
-    db = connection_pool.get_connection()
+    db = get_conn()
     cursor = None
     try:
         cursor = db.cursor(dictionary=True)

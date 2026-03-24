@@ -1,6 +1,7 @@
 -- View: student placement status (only those with offers)
-CREATE OR REPLACE VIEW student_placement_status AS
-SELECT 
+DROP VIEW IF EXISTS student_placement_status;
+CREATE VIEW student_placement_status AS
+SELECT
     s.student_id,
     s.name,
     c.company_name,
@@ -12,7 +13,8 @@ JOIN job_roles j ON o.job_id = j.job_id
 JOIN companies c ON j.company_id = c.company_id;
 
 -- Company-wise placements: count ONLY accepted offers
-CREATE OR REPLACE VIEW company_placement_stats AS
+DROP VIEW IF EXISTS company_placement_stats;
+CREATE VIEW company_placement_stats AS
 SELECT
     c.company_name,
     COUNT(o.offer_id) AS total_placements
