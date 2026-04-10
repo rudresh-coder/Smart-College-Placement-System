@@ -8,6 +8,19 @@ function App() {
   const [studentId, setStudentId] = useState("");
   const [activeTab, setActiveTab] = useState("jobs");
   const [adminKey, setAdminKey] = useState("");
+  const [showAdminLogin, setShowAdminLogin] = useState(false);
+  const [adminKeyInput, setAdminKeyInput] = useState("");
+  const [message, setMessage] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const adminFetch = (url, options = {}, keyOverride = null) => {
+    const keyToUse = keyOverride ?? adminKey;
+    const mergedHeaders = {
+      ...(options.headers || {}),
+      ...(keyToUse ? { "X-Admin-Key": keyToUse } : {}),
+    };
+    return fetch(url, { ...options, headers: mergedHeaders });
+  };
 
   // Student state
   const [student, setStudent] = useState(null);
@@ -19,22 +32,6 @@ function App() {
   const [companies, setCompanies] = useState([]);
   const [allApplications, setAllApplications] = useState([]);
   const [stats, setStats] = useState([]);
-
-  const [message, setMessage] = useState("");
-  const [loading, setLoading] = useState(false);
-
-  const adminFetch = (url, options = {}) => {
-    const mergedHeaders = {
-      ...(options.headers || {}),
-      ...(adminKey ? { "X-Admin-Key": adminKey } : {}),
-    };
-
-    return fetch(url, { ...options, headers: mergedHeaders });
-  };
-
-  // ============================================
-  // STUDENT LOGIN & WORKFLOWS
-  // ============================================
 
   const handleStudentLogin = async (e) => {
     e.preventDefault();
@@ -108,30 +105,39 @@ function App() {
     }
   };
 
-  // ============================================
-  // ADMIN WORKFLOWS
-  // ============================================
-
   const handleAdminLogin = () => {
-    const key = window.prompt("Enter Admin API Key");
+    setMessage("");
+    setShowAdminLogin(true);
+  };
+
+  const handleAdminAuthSubmit = async (e) => {
+    e.preventDefault();
+    const key = adminKeyInput.trim();
+
     if (!key) {
       setMessage("Admin API key is required");
       return;
     }
 
-    setAdminKey(key);
-    setUserType("admin");
-    setActiveTab("students");
-    loadAdminData();
+    try {
+      setAdminKey(key);
+      setUserType("admin");
+      setActiveTab("students");
+      setShowAdminLogin(false);
+      setAdminKeyInput("");
+      await loadAdminData(key);
+    } catch (error) {
+      setMessage(error.message);
+    }
   };
 
-  const loadAdminData = async () => {
+  const loadAdminData = async (keyOverride = null) => {
     try {
       const [studentsRes, companiesRes, appsRes, statsRes, jobsRes] = await Promise.all([
-        adminFetch(`${API_BASE}/admin/students`),
-        adminFetch(`${API_BASE}/admin/companies`),
-        adminFetch(`${API_BASE}/admin/applications`),
-        adminFetch(`${API_BASE}/admin/stats/placement`),
+        adminFetch(`${API_BASE}/admin/students`, {}, keyOverride),
+        adminFetch(`${API_BASE}/admin/companies`, {}, keyOverride),
+        adminFetch(`${API_BASE}/admin/applications`, {}, keyOverride),
+        adminFetch(`${API_BASE}/admin/stats/placement`, {}, keyOverride),
         fetch(`${API_BASE}/jobs`),
       ]);
 
@@ -146,6 +152,7 @@ function App() {
       setJobs(await jobsRes.json());
     } catch (error) {
       setMessage(error.message);
+      throw error;
     }
   };
 
@@ -263,9 +270,25 @@ function App() {
           <h1> Smart College Placement System</h1>
           <p style={{ marginBottom: "30px", color: "#aaa" }}>Select User Type</p>
 
-          <button onClick={handleAdminLogin} style={{ marginBottom: "15px", width: "100%" }}>
-             Login as Placement Officer (Admin)
-          </button>
+          {!showAdminLogin ? (
+            <button onClick={handleAdminLogin} style={{ marginBottom: "15px", width: "100%" }}>
+               Login as Placement Officer (Admin)
+            </button>
+          ) : (
+            <form onSubmit={handleAdminAuthSubmit} style={{ marginBottom: "15px" }}>
+              <input
+                type="password"
+                placeholder="Enter Admin API Key"
+                value={adminKeyInput}
+                onChange={(e) => setAdminKeyInput(e.target.value)}
+                required
+              />
+              <button type="submit" style={{ marginBottom: "10px" }}>Login as Admin</button>
+              <button type="button" onClick={() => setShowAdminLogin(false)}>
+                Cancel
+              </button>
+            </form>
+          )}
 
           <hr style={{ margin: "20px 0", border: "1px solid #444" }} />
 

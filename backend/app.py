@@ -1,7 +1,13 @@
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 import os
+import importlib.util
 from mysql.connector import pooling
+
+dotenv_spec = importlib.util.find_spec("dotenv")
+if dotenv_spec is not None:
+    load_dotenv = __import__("dotenv", fromlist=["load_dotenv"]).load_dotenv
+    load_dotenv()
 
 app = Flask(__name__)
 
